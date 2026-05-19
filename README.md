@@ -71,8 +71,147 @@ Votre mission (si vous l'acceptez) : Concevoir une architecture **API-driven** d
 Séquence 4 : Documentation  
 Difficulté : Facile (~30 minutes)
 ---------------------------------------------------
-**Complétez et documentez ce fichier README.md** pour nous expliquer comment utiliser votre solution.  
-Faites preuve de pédagogie et soyez clair dans vos expliquations et processus de travail.  
+# Architecture cible
+
+```text
+Client HTTP
+     ↓
+API Gateway
+     ↓
+Lambda
+     ↓
+EC2 (LocalStack)
+```
+---
+
+# Mise en place de l’environnement
+
+## Installation de LocalStack
+
+LocalStack a été utilisé afin de simuler les services AWS localement.
+
+Les principales commandes utilisées sont les suivantes :
+
+```bash
+sudo -i mkdir rep_localstack
+sudo -i python3 -m venv ./rep_localstack
+sudo -i pip install --upgrade pip && python3 -m pip install localstack
+```
+
+Après installation, LocalStack a été démarré avec :
+
+```bash
+localstack start -d
+```
+
+L’état des services AWS simulés a ensuite été vérifié :
+
+```bash
+localstack status services
+```
+
+# Configuration AWS
+
+Les variables d’environnement suivantes ont été configurées afin de communiquer avec LocalStack :
+
+```bash
+export AWS_ENDPOINT="https://URL-DU-PORT-4566"
+export AWS_ACCESS_KEY_ID=test
+export AWS_SECRET_ACCESS_KEY=test
+export AWS_DEFAULT_REGION=us-east-1
+```
+
+---
+
+# Création de l’instance EC2
+
+Une instance EC2 simulée a été créée dans LocalStack afin d’être pilotée par la fonction Lambda.
+
+Commande principale utilisée :
+
+```bash
+aws --endpoint-url=$AWS_ENDPOINT ec2 run-instances \
+  --image-id ami-03cf127a \
+  --instance-type t2.micro \
+  --count 1
+```
+
+L’identifiant de l’instance a ensuite été récupéré afin d’être utilisé dans la fonction Lambda.
+
+---
+
+# Fonction Lambda
+
+Une fonction Lambda nommée `ec2-controller` a été développée afin de recevoir une action (`start` ou `stop`) et d’exécuter cette action sur l’instance EC2.
+
+Le fonctionnement de la Lambda est le suivant :
+
+- réception d’une requête HTTP ;
+- lecture du champ `action` ;
+- démarrage ou arrêt de l’instance EC2 ;
+- retour d’une réponse JSON.
+
+La fonction Lambda utilise la bibliothèque `boto3` afin de communiquer avec l’API EC2 de LocalStack.
+
+---
+
+# Déploiement de la Lambda
+
+Le code Python de la fonction Lambda a été compressé dans une archive ZIP puis déployé dans LocalStack.
+
+Les principales étapes ont été :
+
+- création du rôle IAM ;
+- création de la fonction Lambda ;
+- ajout des variables d’environnement ;
+- liaison avec l’instance EC2.
+
+---
+
+# Mise en place de l’API Gateway
+
+Une API Gateway a ensuite été créée afin d’exposer un endpoint HTTP.
+
+Une route `/control` utilisant la méthode `POST` a été configurée puis connectée à la fonction Lambda via une intégration AWS_PROXY.
+
+Cette API permet donc d’envoyer directement des actions HTTP vers la fonction Lambda.
+
+---
+
+# Utilisation de la solution
+
+## Arrêt de l’instance EC2
+
+```bash
+curl -X POST \
+  "$AWS_ENDPOINT/restapis/$API_ID/prod/_user_request_/control" \
+  -H "Content-Type: application/json" \
+  -d '{"action":"stop"}'
+```
+
+## Démarrage de l’instance EC2
+
+```bash
+curl -X POST \
+  "$AWS_ENDPOINT/restapis/$API_ID/prod/_user_request_/control" \
+  -H "Content-Type: application/json" \
+  -d '{"action":"start"}'
+```
+
+---
+
+# Vérification du fonctionnement
+
+L’état de l’instance EC2 a été vérifié avec :
+
+```bash
+aws --endpoint-url=$AWS_ENDPOINT ec2 describe-instances \
+  --instance-ids $INSTANCE_ID \
+  --query "Reservations[0].Instances[0].State.Name" \
+  --output text
+```
+
+Les changements d’état (`running` et `stopped`) ont confirmé le bon fonctionnement de l’architecture. 
    
 ---------------------------------------------------
 Evaluation
